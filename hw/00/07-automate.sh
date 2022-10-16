@@ -1,8 +1,5 @@
 #!/bin/sh
 
-
-set -ue
-
 die() {
     exit_code="$1"
     shift
@@ -104,6 +101,7 @@ fi; if [ "$colliding_files_count" = 1 ]; then
     debug_msg "generating key files"
 
     ssh-keygen -f "$file_path" -t ed25519
+    sudo chmod 600 "$file_path"
 fi
 
 
@@ -111,28 +109,41 @@ debug_msg "adding key to ssh agent"
 
 ssh-add "$file_path"
 
-machines="linux.ms.mff.cuni.cz 10.10.50.7 10.10.50.9 10.10.50.10 10.10.50.11"
-
 debug_msg "creating config in $ssh_config_include"
+
+(echo "Host linux"
+echo "    Hostname linux.ms.mff.cuni.cz "
+echo "    User $login"
+echo "    IdentityFile $file_path"
+echo "" ) >"$ssh_config_include"
+
+machines="10.10.50.7 10.10.50.9 10.10.50.10 10.10.50.11"
 
 ( for machine in $machines ; do
     echo "Host $machine"
     echo "    User $login"
     echo "    IdentityFile $file_path"
+    echo "    ProxyJump linux"
     echo ""
-done ) >"$ssh_config_include"
+done ) >>"$ssh_config_include"
+
+sudo chmod 600 "$ssh_config_include"
 
 debug_msg "appending generated config to ~/.ssh/config"
 
 if !  grep -q "Include $ssh_config_include" <"$HOME/.ssh/config" ; then
-    echo >>"$HOME/.ssh/config" 
+    ( echo "Include $ssh_config_include"
+    echo ""
+    cat "$HOME/.ssh/config" ) > "$HOME/.ssh/config"
     else
     debug_msg "config was already appended"
 fi
 
-debug_msg "copying the new key to following machines: $machines"
+debug_msg "copying the new key to following machines: linux.ms.mff.cuni.cz $machines"
 
+
+ssh-copy-id -i "$file_path.pub" "linux"
 for machine in $machines ; do
-    ssh-copy-id -i "$file_path.pub" "$login@$machine"
+    ssh-copy-id -i "$file_path.pub" "$machine"
 done
 
